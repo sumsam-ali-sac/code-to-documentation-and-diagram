@@ -60,7 +60,7 @@ def sequence_worker_node(state: AgentState):
     last_message = response["messages"][-1].content
     dsl = extract_mermaid_code(last_message)
     
-    new_documentation = list(state.get("documentation", []))
+    new_documentation = []
     
     if dsl:
         result = validate_mermaid(dsl)

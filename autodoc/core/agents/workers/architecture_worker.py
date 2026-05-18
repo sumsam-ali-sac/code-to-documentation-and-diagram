@@ -54,8 +54,8 @@ def architecture_worker_node(state: AgentState):
     last_message = response["messages"][-1].content
     code = extract_python_code(last_message)
     
-    new_documentation = list(state.get("documentation", []))
-    new_diagram_paths = list(state.get("diagram_paths", []))
+    new_documentation = []
+    new_diagram_paths = []
     
     if code and "from diagrams" in code:
         result = validate_and_execute_diagram(code, project_path)
