@@ -7,6 +7,7 @@ from autodoc.application.workers.erd_worker import erd_worker_node
 from autodoc.application.workers.architecture_worker import architecture_worker_node
 from autodoc.application.workers.sequence_worker import sequence_worker_node
 from autodoc.application.workers.flow_worker import flow_worker_node
+from autodoc.application.workers.class_worker import class_worker_node
 from autodoc.application.markdown_builder_node import markdown_builder_node
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, END
@@ -27,7 +28,7 @@ You are the Coordinator Agent for AutoDoc. Your job is to:
 1. Scan the root of the project to identify the technology stack.
 2. Map out the high-level project structure.
 3. Identify "Points of Interest" (Database models, API definitions, Business logic).
-4. Decide which specialized Worker Agents to engage (architecture, erd, sequence, flow).
+4. Decide which specialized Worker Agents to engage (architecture, erd, sequence, flow, class).
 
 You must output a JSON block indicating the specific diagramming tasks to run. Use the format:
 ```json
@@ -35,7 +36,8 @@ You must output a JSON block indicating the specific diagramming tasks to run. U
   {"worker": "architecture_worker", "target": "overall system"},
   {"worker": "erd_worker", "target": "database models"},
   {"worker": "sequence_worker", "target": "main API flow"},
-  {"worker": "flow_worker", "target": "complex business logic"}
+  {"worker": "flow_worker", "target": "complex business logic"},
+  {"worker": "class_worker", "target": "key classes and interfaces"}
 ]
 ```
 Choose the workers that make sense for the project. Output ONLY the valid JSON block as your final answer.
@@ -53,7 +55,7 @@ def extract_json_tasks(text: str) -> list:
     try:
         return json.loads(text)
     except:
-        return [{"worker": "architecture_worker"}, {"worker": "erd_worker"}, {"worker": "sequence_worker"}, {"worker": "flow_worker"}]
+        return [{"worker": "architecture_worker"}, {"worker": "erd_worker"}, {"worker": "sequence_worker"}, {"worker": "flow_worker"}, {"worker": "class_worker"}]
 
 def coordinator_node(state: AgentState):
     print("--- Coordinator Started ---")
@@ -79,7 +81,7 @@ def route_tasks(state: AgentState):
     sends = []
     for task in tasks:
         worker_name = task.get("worker")
-        if worker_name in ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker"]:
+        if worker_name in ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker", "class_worker"]:
             sends.append(Send(worker_name, state))
     if not sends:
         return ["markdown_builder"]
@@ -93,18 +95,20 @@ def run_coordinator(project_path: str):
     workflow.add_node("erd_worker", erd_worker_node)
     workflow.add_node("sequence_worker", sequence_worker_node)
     workflow.add_node("flow_worker", flow_worker_node)
+    workflow.add_node("class_worker", class_worker_node)
     workflow.add_node("markdown_builder", markdown_builder_node)
 
     workflow.set_entry_point("coordinator")
 
     # Fan-out to workers in parallel
-    workflow.add_conditional_edges("coordinator", route_tasks, ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker", "markdown_builder"])
+    workflow.add_conditional_edges("coordinator", route_tasks, ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker", "class_worker", "markdown_builder"])
 
     # Fan-in to markdown builder
     workflow.add_edge("architecture_worker", "markdown_builder")
     workflow.add_edge("erd_worker", "markdown_builder")
     workflow.add_edge("sequence_worker", "markdown_builder")
     workflow.add_edge("flow_worker", "markdown_builder")
+    workflow.add_edge("class_worker", "markdown_builder")
     workflow.add_edge("markdown_builder", END)
 
     app = workflow.compile()

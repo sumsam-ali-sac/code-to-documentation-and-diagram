@@ -22,7 +22,8 @@ def markdown_builder_node(state: AgentState):
     erd_docs = [d for d in docs if "ERD" in d]
     seq_docs = [d for d in docs if "Sequence" in d]
     flow_docs = [d for d in docs if "Flow" in d]
-    other_docs = [d for d in docs if not any(kw in d for kw in ["Architecture", "ERD", "Sequence", "Flow"])]
+    class_docs = [d for d in docs if "Class" in d]
+    other_docs = [d for d in docs if not any(kw in d for kw in ["Architecture", "ERD", "Sequence", "Flow", "Class"])]
 
     if arch_docs:
         with open(os.path.join(output_dir, "Architecture.md"), "w") as f:
@@ -43,6 +44,11 @@ def markdown_builder_node(state: AgentState):
             f.write("# Application Flows\n\n")
             for d in seq_docs: f.write(d + "\n\n")
             for d in flow_docs: f.write(d + "\n\n")
+
+    if class_docs:
+        with open(os.path.join(output_dir, "Classes.md"), "w") as f:
+            f.write("# Class Diagrams\n\n")
+            for d in class_docs: f.write(d + "\n\n")
 
     if other_docs:
         with open(os.path.join(output_dir, "Miscellaneous.md"), "w") as f:
