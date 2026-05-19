@@ -33,14 +33,18 @@ AutoDoc is an autonomous, agentic platform that uses a Coordinator/Worker patter
 ### Phase 1: Agentic Engine & Surgical Tools
 - [ ] **Task 1.1:** Refine `list_directory`, `read_file`, and `grep_search` tools with robust error handling and path sanitization.
 - [ ] **Task 1.2:** Implement `ContextMapper` logic in the Coordinator to identify sub-modules and domain boundaries.
-- [ ] **Task 1.3:** Build advanced LangGraph state management to support long-running agent loops and fanned-out workers.
+- [x] **Task 1.3:** Build advanced LangGraph state management (completed with map-reduce fix).
 - [ ] **Task 1.4:** Implement "Incremental Scanning" logic to only re-document changed modules.
+- [x] **Task 1.5:** Implement Domain-Driven Design (DDD) directory structure.
+- [x] **Task 1.6:** Implement Dynamic Task Routing using LangGraph Send API.
 
 ### Phase 2: Multi-Engine Diagramming Suite
-- [ ] **Task 2.1:** Standardize `ArchitectureWorker` to produce high-fidelity system-level PNGs using Python `diagrams`.
-- [ ] **Task 2.2:** Build the `MermaidValidator` API-based check for Sequence and ERD diagrams.
+- [x] **Task 2.1:** Standardize `ArchitectureWorker`.
+- [x] **Task 2.2:** Build the `MermaidValidator`.
 - [ ] **Task 2.3:** Implement a "Diagram Gallery" in the UI to preview all generated visuals.
 - [ ] **Task 2.4:** Support custom iconography and styling themes for all diagram engines.
+- [x] **Task 2.5:** Implement Flow Diagram worker.
+- [x] **Task 2.6:** Implement Markdown Builder node to split complex documentation into multiple files.
 
 ### Phase 3: Data Layer & Persistence (DB)
 - [ ] **Task 3.1:** Set up a database (PostgreSQL/SQLAlchemy) to track Projects, Scan Tasks, and Generated Artifacts.
