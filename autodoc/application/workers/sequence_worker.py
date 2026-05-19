@@ -1,7 +1,7 @@
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import SystemMessage
-from autodoc.core.agents.state import AgentState
-from autodoc.core.tools.code_scanner import list_directory, read_file, grep_search
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
 from langgraph.prebuilt import create_react_agent
 import os
 
@@ -31,7 +31,7 @@ Focus on the interaction between components.
 Output ONLY the Mermaid DSL code block.
 """
 
-from autodoc.core.engine.validator import validate_mermaid
+from autodoc.infrastructure.engine.validator import validate_mermaid
 import re
 
 # ... (llm and prompt) ...
@@ -60,7 +60,7 @@ def sequence_worker_node(state: AgentState):
     last_message = response["messages"][-1].content
     dsl = extract_mermaid_code(last_message)
     
-    new_documentation = list(state.get("documentation", []))
+    new_documentation = []
     
     if dsl:
         result = validate_mermaid(dsl)

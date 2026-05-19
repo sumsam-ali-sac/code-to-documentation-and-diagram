@@ -1,8 +1,8 @@
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import SystemMessage
-from autodoc.core.agents.state import AgentState
-from autodoc.core.tools.code_scanner import list_directory, read_file, grep_search
-from autodoc.core.engine.validator import validate_mermaid
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
+from autodoc.infrastructure.engine.validator import validate_mermaid
 from langgraph.prebuilt import create_react_agent
 import os
 import re
@@ -53,7 +53,7 @@ def erd_worker_node(state: AgentState):
     last_message = response["messages"][-1].content
     dsl = extract_mermaid_code(last_message)
     
-    new_documentation = list(state.get("documentation", []))
+    new_documentation = []
     
     if dsl:
         result = validate_mermaid(dsl)

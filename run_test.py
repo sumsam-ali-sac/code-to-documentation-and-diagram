@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from autodoc.core.agents.coordinator import run_coordinator
+from autodoc.application.coordinator import run_coordinator
 
 if __name__ == "__main__":
     project_path = os.path.abspath("test_project")

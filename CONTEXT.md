@@ -39,3 +39,12 @@ A process that attempts to execute agent-generated diagram code, captures any er
 
 ### Codebase Access
 The mechanism by which the AutoDoc Service retrieves the target source code, supporting both local filesystem paths and remote Git repository URLs.
+
+### Domain, Application, and Infrastructure Layers
+The standard DDD (Domain-Driven Design) architectural pattern the repository adheres to for structural integrity.
+
+### Flow Worker
+A specialized worker that extracts algorithms and complex business logic into Mermaid flowcharts.
+
+### Markdown Builder
+A graph node that intelligently splits generated documentation into separate `.md` files based on complexity instead of a single output blob.

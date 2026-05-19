@@ -39,7 +39,9 @@ pdm run python run_test.py
 
 ## Architecture
 
-- **Coordinator Agent:** Scans the codebase and delegates tasks.
-- **ERD Worker:** Extracts database models and generates ERD diagrams.
+- **Domain-Driven Design:** The codebase is split cleanly into `domain`, `application`, and `infrastructure` layers.
+- **Coordinator Agent:** Scans the codebase, dynamically decides necessary diagrams, and routes tasks using the LangGraph Send API.
+- **Workers:** Specialized agents (`Architecture`, `ERD`, `Sequence`, `Flow`) that execute diagram generation concurrently.
 - **Diagram Validator:** Executes agent-generated code and handles self-correction.
+- **Markdown Builder:** Analyzes generated documentation complexity and splits it into structured `.md` files (e.g., `Architecture.md`, `Data_Models.md`).
 - **FastAPI:** Provides a web interface for documentation generation.

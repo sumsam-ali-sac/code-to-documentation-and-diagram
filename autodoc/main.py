@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from autodoc.api.routes import router as api_router
+from autodoc.application.api.routes import router as api_router
 import uvicorn
 from dotenv import load_dotenv
 

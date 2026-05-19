@@ -1,8 +1,8 @@
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import SystemMessage
-from autodoc.core.agents.state import AgentState
-from autodoc.core.tools.code_scanner import list_directory, read_file, grep_search
-from autodoc.core.engine.validator import validate_and_execute_diagram
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
+from autodoc.infrastructure.engine.validator import validate_and_execute_diagram
 from langgraph.prebuilt import create_react_agent
 import os
 import re
@@ -54,8 +54,8 @@ def architecture_worker_node(state: AgentState):
     last_message = response["messages"][-1].content
     code = extract_python_code(last_message)
     
-    new_documentation = list(state.get("documentation", []))
-    new_diagram_paths = list(state.get("diagram_paths", []))
+    new_documentation = []
+    new_diagram_paths = []
     
     if code and "from diagrams" in code:
         result = validate_and_execute_diagram(code, project_path)
