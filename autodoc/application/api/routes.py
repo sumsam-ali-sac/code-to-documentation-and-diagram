@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
-from autodoc.schemas.project import ProjectInput, DocumentationResponse
-# from autodoc.core.agents.coordinator import run_coordinator
+from autodoc.domain.project import ProjectInput, DocumentationResponse
+# from autodoc.application.coordinator import run_coordinator
 
 router = APIRouter()
 

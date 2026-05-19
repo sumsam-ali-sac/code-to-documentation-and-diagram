@@ -10,6 +10,8 @@ class AgentState(TypedDict):
     project_path: str
     # The identified language stack
     stack: str
+    # A list of specific tasks the coordinator has decided are necessary
+    tasks: List[dict]
     # A list of "points of interest" identified by the coordinator
     points_of_interest: Annotated[List[str], operator.add]
     # The generated documentation snippets
