@@ -1,4 +1,9 @@
+"""
+API routes for the AutoDoc service.
+Defines endpoints for triggering and tracking documentation generation.
+"""
 import os
+import logging
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from autodoc.domain.project import ProjectInput, DocumentationResponse
 from autodoc.application.coordinator import run_coordinator
@@ -9,7 +14,19 @@ router = APIRouter()
 # Simple in-memory store for status tracking
 generation_status = {}
 
+logger = logging.getLogger(__name__)
+
+
 def process_generation(project_name: str, path: str, git_url: str, branch: str):
+    """
+    Background task to process documentation generation.
+
+    Args:
+        project_name: Name of the project.
+        path: Local path to the project (optional if git_url is provided).
+        git_url: Git URL of the project (optional).
+        branch: Branch to use if cloning.
+    """
     repo_path = path
     is_temp_repo = False
     try:
@@ -27,11 +44,13 @@ def process_generation(project_name: str, path: str, git_url: str, branch: str):
             "stack": result.get("stack"),
             "diagrams": result.get("diagram_paths")
         }
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.error("Error during documentation generation for %s: %s", project_name, e)
         generation_status[project_name] = {"status": "Failed", "error": str(e)}
     finally:
         if is_temp_repo and repo_path:
             cleanup_repository(repo_path)
+
 
 @router.post("/generate", response_model=DocumentationResponse)
 async def generate_documentation(project: ProjectInput, background_tasks: BackgroundTasks):
@@ -57,13 +76,18 @@ async def generate_documentation(project: ProjectInput, background_tasks: Backgr
             status="Documentation generation started",
             bundle_url=f"/api/v1/status/{project.name}"
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        if not isinstance(e, HTTPException):
-            raise HTTPException(status_code=500, detail=str(e))
-        raise e
+        logger.exception("Failed to initiate documentation generation")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @router.get("/status/{project_name}")
 async def get_status(project_name: str):
+    """
+    Get the status of a documentation generation task.
+    """
     if project_name not in generation_status:
         raise HTTPException(status_code=404, detail="Project not found or generation not started.")
     return generation_status[project_name]

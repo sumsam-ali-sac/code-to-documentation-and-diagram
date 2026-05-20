@@ -1,3 +1,6 @@
 # Application Flows
 
-Failed to validate Sequence Mermaid DSL: Invalid Mermaid start tag.
+Generated Sequence diagram (Mermaid):
+
+![Sequence Diagram](../diagrams/sequence.png)
+

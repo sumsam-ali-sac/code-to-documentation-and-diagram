@@ -1,11 +1,20 @@
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import SystemMessage
-from autodoc.domain.state import AgentState
-from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
-from autodoc.infrastructure.engine.validator import validate_and_execute_diagram
-from langgraph.prebuilt import create_react_agent
+"""
+Architecture worker module for AutoDoc.
+Analyzes project structure and generates system architecture diagrams using the diagrams library.
+"""
 import os
 import re
+
+from langchain_core.messages import SystemMessage
+from langchain_openai import AzureChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.engine.validator import \
+    validate_and_execute_diagram
+from autodoc.infrastructure.tools.code_scanner import (grep_search,
+                                                       list_directory,
+                                                       read_file)
 
 llm = AzureChatOpenAI(
     azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
@@ -34,29 +43,51 @@ with Diagram("System Architecture", show=False, filename="arch_output"):
 Output ONLY the Python code for the diagram.
 """
 
+
 def extract_python_code(text: str) -> str:
+    """
+    Extracts Python code from the LLM response.
+
+    Args:
+        text: The raw text response.
+
+    Returns:
+        The extracted Python code.
+    """
     pattern = r"```python\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
-    if match: return match.group(1).strip()
+    if match:
+        return match.group(1).strip()
     pattern = r"```\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
-    if match: return match.group(1).strip()
+    if match:
+        return match.group(1).strip()
     return text.strip()
 
+
 def architecture_worker_node(state: AgentState):
-    print(f"--- Architecture Worker Started ---")
+    """
+    Architecture worker node that generates system diagrams.
+
+    Args:
+        state: The current agent state.
+
+    Returns:
+        Updated state with documentation and diagram paths.
+    """
+    print("--- Architecture Worker Started ---")
     project_path = state["project_path"]
     messages = [SystemMessage(content=ARCHITECTURE_WORKER_SYSTEM_PROMPT)] + list(state["messages"])
-    
+
     agent = create_react_agent(llm, [list_directory, read_file, grep_search])
     response = agent.invoke({"messages": messages})
-    
+
     last_message = response["messages"][-1].content
     code = extract_python_code(last_message)
-    
+
     new_documentation = []
     new_diagram_paths = []
-    
+
     if code and "from diagrams" in code:
         result = validate_and_execute_diagram(code, project_path)
         if result["success"]:
@@ -64,7 +95,7 @@ def architecture_worker_node(state: AgentState):
             new_diagram_paths.append(os.path.join(project_path, "arch_output.png"))
         else:
             new_documentation.append(f"Failed to generate Architecture diagram: {result['error']}")
-    
+
     return {
         "messages": response["messages"],
         "documentation": new_documentation,

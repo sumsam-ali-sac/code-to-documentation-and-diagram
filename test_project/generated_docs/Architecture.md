@@ -1,5 +1,6 @@
 # System Architecture
 
-![Architecture Diagram](../arch_output.png)
+![Architecture Diagram](../diagrams/architecture.png)
 
 Generated Architecture diagram (Python Diagrams).
+

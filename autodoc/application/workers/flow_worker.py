@@ -1,9 +1,19 @@
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import SystemMessage
-from autodoc.domain.state import AgentState
-from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
-from langgraph.prebuilt import create_react_agent
+"""
+Flow worker module for AutoDoc.
+Analyzes business logic and algorithms, generating Mermaid flowchart diagrams.
+"""
 import os
+import re
+
+from langchain_core.messages import SystemMessage
+from langchain_openai import AzureChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.engine.validator import validate_mermaid
+from autodoc.infrastructure.tools.code_scanner import (grep_search,
+                                                       list_directory,
+                                                       read_file)
 
 llm = AzureChatOpenAI(
     azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
@@ -29,21 +39,37 @@ Focus on the internal logic of complex functions or processes.
 Output ONLY the Mermaid DSL code block.
 """
 
-from autodoc.infrastructure.engine.validator import validate_mermaid
-import re
 
 def extract_mermaid_code(text: str) -> str:
+    """
+    Extracts Mermaid code from the LLM response.
+
+    Args:
+        text: The raw text response.
+
+    Returns:
+        The extracted Mermaid DSL.
+    """
     pattern = r"```mermaid\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
-    if match: return match.group(1).strip()
+    if match:
+        return match.group(1).strip()
     pattern = r"```\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
-    if match: return match.group(1).strip()
+    if match:
+        return match.group(1).strip()
     return text.strip()
+
 
 def flow_worker_node(state: AgentState):
     """
     The flow worker node that extracts logic algorithms and generates Mermaid flowcharts.
+
+    Args:
+        state: The current agent state.
+
+    Returns:
+        Updated state with documentation.
     """
     print("--- Flow Worker Started ---")
     messages = [

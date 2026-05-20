@@ -2,20 +2,5 @@
 
 Generated ERD diagram (Mermaid):
 
-```mermaid
-erDiagram
-    USER ||--o{ POST : authors
+![Data_models Diagram](../diagrams/data_models.png)
 
-    USER {
-        int id PK
-        string username
-        string email
-    }
-
-    POST {
-        int id PK
-        string title
-        string content
-        int author_id FK
-    }
-```

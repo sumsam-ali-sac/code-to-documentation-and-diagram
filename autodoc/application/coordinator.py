@@ -1,19 +1,28 @@
-from langchain_openai import AzureChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
-from autodoc.domain.state import AgentState
-from autodoc.infrastructure.tools.code_scanner import list_directory, read_file, grep_search
-from autodoc.infrastructure.utils.language_detector import detect_stack
-from autodoc.application.workers.erd_worker import erd_worker_node
-from autodoc.application.workers.architecture_worker import architecture_worker_node
-from autodoc.application.workers.sequence_worker import sequence_worker_node
-from autodoc.application.workers.flow_worker import flow_worker_node
-from autodoc.application.workers.class_worker import class_worker_node
-from autodoc.application.markdown_builder_node import markdown_builder_node
-from langgraph.prebuilt import create_react_agent
-from langgraph.graph import StateGraph, END
-from langgraph.types import Send
-import os
+"""
+Coordinator module for the AutoDoc system.
+Responsible for project analysis and task delegation to specialized workers.
+"""
 import json
+import os
+import re
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import AzureChatOpenAI
+from langgraph.graph import END, StateGraph
+from langgraph.prebuilt import create_react_agent
+from langgraph.types import Send
+
+from autodoc.application.markdown_builder_node import markdown_builder_node
+from autodoc.application.workers.architecture_worker import architecture_worker_node
+from autodoc.application.workers.class_worker import class_worker_node
+from autodoc.application.workers.erd_worker import erd_worker_node
+from autodoc.application.workers.flow_worker import flow_worker_node
+from autodoc.application.workers.sequence_worker import sequence_worker_node
+from autodoc.domain.state import AgentState
+from autodoc.infrastructure.tools.code_scanner import (grep_search,
+                                                       list_directory,
+                                                       read_file)
+from autodoc.infrastructure.utils.language_detector import detect_stack
 
 # Initialize the Azure OpenAI LLM
 llm = AzureChatOpenAI(
@@ -43,21 +52,46 @@ You must output a JSON block indicating the specific diagramming tasks to run. U
 Choose the workers that make sense for the project. Output ONLY the valid JSON block as your final answer.
 """
 
+
 def extract_json_tasks(text: str) -> list:
-    import re
+    """
+    Extracts JSON tasks from the coordinator response.
+
+    Args:
+        text: The raw text response from the LLM.
+
+    Returns:
+        A list of task dictionaries.
+    """
     pattern = r"```json\s*(.*?)\s*```"
     match = re.search(pattern, text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1))
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
     try:
         return json.loads(text)
-    except:
-        return [{"worker": "architecture_worker"}, {"worker": "erd_worker"}, {"worker": "sequence_worker"}, {"worker": "flow_worker"}, {"worker": "class_worker"}]
+    except (json.JSONDecodeError, ValueError):
+        return [
+            {"worker": "architecture_worker"},
+            {"worker": "erd_worker"},
+            {"worker": "sequence_worker"},
+            {"worker": "flow_worker"},
+            {"worker": "class_worker"}
+        ]
+
 
 def coordinator_node(state: AgentState):
+    """
+    Coordinator node that analyzes the project and selects tasks.
+
+    Args:
+        state: The current agent state.
+
+    Returns:
+        Updated state with selected tasks and stack.
+    """
     print("--- Coordinator Started ---")
     project_path = state["project_path"]
     stack = detect_stack(project_path)
@@ -76,18 +110,42 @@ def coordinator_node(state: AgentState):
         "tasks": tasks
     }
 
+
 def route_tasks(state: AgentState):
+    """
+    Routes tasks to the appropriate workers.
+
+    Args:
+        state: The current agent state.
+
+    Returns:
+        A list of Send objects or a list with the next node name.
+    """
     tasks = state.get("tasks", [])
     sends = []
+    worker_names = [
+        "architecture_worker", "erd_worker", "sequence_worker",
+        "flow_worker", "class_worker"
+    ]
     for task in tasks:
         worker_name = task.get("worker")
-        if worker_name in ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker", "class_worker"]:
+        if worker_name in worker_names:
             sends.append(Send(worker_name, state))
     if not sends:
         return ["markdown_builder"]
     return sends
 
+
 def run_coordinator(project_path: str):
+    """
+    Initializes and runs the coordinator workflow.
+
+    Args:
+        project_path: Path to the project to document.
+
+    Returns:
+        The final state of the workflow.
+    """
     workflow = StateGraph(AgentState)
 
     workflow.add_node("coordinator", coordinator_node)
@@ -101,7 +159,14 @@ def run_coordinator(project_path: str):
     workflow.set_entry_point("coordinator")
 
     # Fan-out to workers in parallel
-    workflow.add_conditional_edges("coordinator", route_tasks, ["architecture_worker", "erd_worker", "sequence_worker", "flow_worker", "class_worker", "markdown_builder"])
+    workflow.add_conditional_edges(
+        "coordinator",
+        route_tasks,
+        [
+            "architecture_worker", "erd_worker", "sequence_worker",
+            "flow_worker", "class_worker", "markdown_builder"
+        ]
+    )
 
     # Fan-in to markdown builder
     workflow.add_edge("architecture_worker", "markdown_builder")
@@ -111,10 +176,12 @@ def run_coordinator(project_path: str):
     workflow.add_edge("class_worker", "markdown_builder")
     workflow.add_edge("markdown_builder", END)
 
-    app = workflow.compile()
+    workflow_app = workflow.compile()
 
     initial_state = {
-        "messages": [HumanMessage(content=f"Please document the project at {project_path}")],
+        "messages": [
+            HumanMessage(content=f"Please document the project at {project_path}")
+        ],
         "project_path": project_path,
         "stack": "",
         "points_of_interest": [],
@@ -124,4 +191,4 @@ def run_coordinator(project_path: str):
         "errors": []
     }
 
-    return app.invoke(initial_state)
+    return workflow_app.invoke(initial_state)

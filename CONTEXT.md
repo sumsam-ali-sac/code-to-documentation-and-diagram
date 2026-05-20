@@ -26,7 +26,7 @@ The web service (built with FastAPI and Python) that provides an interface for i
 The process by which the Coordinator Agent identifies the technology stack (e.g., Next.js, FastAPI, React) of a target codebase before dispatching workers.
 
 ### Documentation Bundle
-A collection of generated Markdown files and diagrams. Mermaid diagrams are embedded as text blocks, while architecture diagrams are included as rendered image files (PNG/SVG) linked within the Markdown.
+A collection of generated Markdown files and diagrams. All diagrams (Mermaid and Python Diagrams) are stored as rendered PNG files in a `diagrams/` folder. The raw Mermaid DSL definitions are preserved in a `diagrams/mermaid/` subfolder. The main Markdown files link to these PNG images for consistent visualization across different platforms.
 
 ### Agent Engine
 The underlying orchestration framework (LangGraph) that manages the state, logic, and communication between the Coordinator and Worker agents.
