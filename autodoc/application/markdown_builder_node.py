@@ -5,7 +5,7 @@ Consolidates documentation from all workers and writes it to markdown files.
 import os
 import re
 import shutil
-from typing import List, Dict
+from typing import List
 from autodoc.domain.state import AgentState
 from autodoc.infrastructure.engine.validator import download_mermaid_png
 
@@ -73,7 +73,8 @@ def _process_diagrams(project_path: str, docs: List[str]) -> List[str]:
             png_path = os.path.join(diagrams_dir, png_file_name)
             if download_mermaid_png(dsl, png_path):
                 # Replace code block with image link
-                # Note: The MD files are in generated_docs/, so the path to diagrams/ is ../diagrams/
+                # Note: The MD files are in generated_docs/, 
+                # so the path to diagrams/ is ../diagrams/
                 img_link = f"![{diag_type.capitalize()} Diagram](../diagrams/{png_file_name})"
                 new_doc = new_doc.replace(match.group(0), img_link)
 
