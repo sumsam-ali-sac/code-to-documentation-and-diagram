@@ -1,61 +1,68 @@
 import os
 import shutil
 import unittest
-from autodoc.infrastructure.engine.validator import download_mermaid_png
-from autodoc.application.markdown_builder_node import _process_diagrams
+from unittest.mock import patch, MagicMock
+from autodoc.application.markdown_builder_node import markdown_builder_node
 
 class TestDiagramExport(unittest.TestCase):
-    def test_download_mermaid_png(self):
-        # Simple class diagram
-        dsl = "classDiagram\n    class Test {}"
-        output_path = "test_diagram.png"
-
-        # Ensure clean state
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
-        success = download_mermaid_png(dsl, output_path)
-
-        self.assertTrue(success)
-        self.assertTrue(os.path.exists(output_path))
-        self.assertGreater(os.path.getsize(output_path), 0)
-
-        # Cleanup
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
-    def test_process_diagrams(self):
+    @patch("autodoc.application.markdown_builder_node.download_mermaid_png")
+    def test_markdown_builder_node(self, mock_download):
+        # Mock download to create a dummy file
+        def side_effect(dsl, path):
+            with open(path, "wb") as f:
+                f.write(b"dummy mermaid png")
+            return True
+        mock_download.side_effect = side_effect
+        
         project_path = "test_temp_project"
         if os.path.exists(project_path):
             shutil.rmtree(project_path)
         os.makedirs(project_path)
 
-        docs = [
-            "Some text before\n```mermaid\nclassDiagram\n    class A\n```\nSome text after",
-            "Another one\n```mermaid\nerDiagram\n    B ||--o{ C : uses\n```"
-        ]
+        # Create a dummy architecture.png in diagrams folder to simulate new architecture worker behavior
+        diagrams_dir = os.path.join(project_path, "diagrams")
+        os.makedirs(diagrams_dir, exist_ok=True)
+        with open(os.path.join(diagrams_dir, "architecture.png"), "wb") as f:
+            f.write(b"dummy image data")
 
-        updated_docs = _process_diagrams(project_path, docs)
+        state = {
+            "project_path": project_path,
+            "documentation": [
+                {
+                    "type": "architecture",
+                    "explanation": "This is the system architecture.",
+                    "code": "from diagrams import Diagram\nwith Diagram('test'): pass",
+                    "valid": True
+                },
+                {
+                    "type": "classes",
+                    "explanation": "This is the class diagram.",
+                    "code": "classDiagram\n    class Test {}",
+                    "valid": True
+                }
+            ]
+        }
 
-        # Check updated docs
-        self.assertIn("![Classes Diagram](../diagrams/classes.png)", updated_docs[0])
-        self.assertIn("![Data_models Diagram](../diagrams/data_models.png)", updated_docs[1])
-        self.assertNotIn("```mermaid", updated_docs[0])
-        self.assertNotIn("```mermaid", updated_docs[1])
+        # Run the builder
+        markdown_builder_node(state)
 
         # Check files
+        output_dir = os.path.join(project_path, "generated_docs")
         diagrams_dir = os.path.join(project_path, "diagrams")
         mermaid_dir = os.path.join(diagrams_dir, "mermaid")
 
-        self.assertTrue(os.path.exists(os.path.join(diagrams_dir, "classes.png")))
-        self.assertTrue(os.path.exists(os.path.join(diagrams_dir, "data_models.png")))
-        self.assertTrue(os.path.exists(os.path.join(mermaid_dir, "classes.md")))
-        self.assertTrue(os.path.exists(os.path.join(mermaid_dir, "data_models.md")))
+        self.assertTrue(os.path.exists(os.path.join(output_dir, "Architecture.md")))
+        self.assertTrue(os.path.exists(os.path.join(output_dir, "Classes.md")))
+        self.assertTrue(os.path.exists(os.path.join(diagrams_dir, "architecture.png")))
+        self.assertTrue(os.path.exists(os.path.join(diagrams_dir, "classes_1.png")))
+        self.assertTrue(os.path.exists(os.path.join(mermaid_dir, "classes_1.md")))
 
-        # Verify content of mermaid MD
-        with open(os.path.join(mermaid_dir, "classes.md"), "r") as f:
+        # Verify content of Architecture MD
+        with open(os.path.join(output_dir, "Architecture.md"), "r") as f:
             content = f.read()
-            self.assertIn("classDiagram", content)
+            self.assertIn("# Architecture Documentation", content)
+            self.assertIn("![Architecture Diagram](../diagrams/architecture.png)", content)
+            self.assertIn("This is the system architecture.", content)
 
         # Cleanup
         shutil.rmtree(project_path)

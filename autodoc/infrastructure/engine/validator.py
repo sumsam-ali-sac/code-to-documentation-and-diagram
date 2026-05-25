@@ -2,18 +2,30 @@
 Validation engine for the AutoDoc system.
 Provides utilities for validating Mermaid DSL and executing diagram generation code.
 """
+
 import base64
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import zlib
 
 import httpx
 
 
+def clean_mermaid_dsl(dsl: str) -> str:
+    """Removes markdown code blocks if present."""
+    pattern = r"```(?:mermaid)?\s*(.*?)\s*```"
+    match = re.search(pattern, dsl, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return dsl.strip()
+
+
 def validate_mermaid(dsl: str) -> dict:
     """
-    Validates Mermaid DSL by checking for common start tags and encoding for mermaid.ink.
+    Validates Mermaid DSL by checking for common start tags and encoding for Kroki.
 
     Args:
         dsl: The Mermaid DSL string to validate.
@@ -22,21 +34,27 @@ def validate_mermaid(dsl: str) -> dict:
         A dictionary indicating success, error message, and a preview URL.
     """
     try:
-        # We use mermaid.ink or a similar service to check if the DSL is valid
-        # This is a simple visual check; if the API returns 400, the DSL is invalid.
-        # Encode the DSL for the URL
         sample_dsl = dsl.strip()
-        # Simple heuristic: check for common Mermaid start tags
-        valid_tags = ["graph", "sequenceDiagram", "erDiagram", "flowchart", "classDiagram"]
+        valid_tags = [
+            "graph",
+            "sequenceDiagram",
+            "erDiagram",
+            "flowchart",
+            "classDiagram",
+        ]
         if not any(sample_dsl.startswith(tag) for tag in valid_tags):
-            return {"success": False, "error": "Invalid Mermaid start tag.", "url": None}
+            return {
+                "success": False,
+                "error": "Invalid Mermaid start tag.",
+                "url": None,
+            }
 
-        # Base64 encoding for the URL
-        encoded_dsl = base64.b64encode(dsl.encode()).decode()
+        compressed = zlib.compress(dsl.encode("utf-8"), 9)
+        encoded_dsl = base64.urlsafe_b64encode(compressed).decode("utf-8")
         return {
             "success": True,
             "error": None,
-            "url": f"https://mermaid.ink/img/{encoded_dsl}"
+            "url": f"https://kroki.io/mermaid/svg/{encoded_dsl}",
         }
     except Exception as e:  # pylint: disable=broad-exception-caught
         return {"success": False, "error": str(e), "url": None}
@@ -44,7 +62,7 @@ def validate_mermaid(dsl: str) -> dict:
 
 def download_mermaid_png(dsl: str, output_path: str) -> bool:
     """
-    Downloads a rendered Mermaid PNG from mermaid.ink.
+    Downloads a rendered Mermaid PNG from Kroki.
 
     Args:
         dsl: The Mermaid DSL string.
@@ -54,14 +72,18 @@ def download_mermaid_png(dsl: str, output_path: str) -> bool:
         True if successful, False otherwise.
     """
     try:
-        encoded_dsl = base64.b64encode(dsl.encode()).decode()
-        url = f"https://mermaid.ink/img/{encoded_dsl}"
+        url = "https://kroki.io/mermaid/png"
+        response = httpx.post(
+            url, data=dsl, headers={"Content-Type": "text/plain"}, timeout=20.0
+        )
 
-        response = httpx.get(url, timeout=20.0)
         if response.status_code == 200:
             with open(output_path, "wb") as f:
                 f.write(response.content)
             return True
+        print(
+            f"Error downloading Mermaid PNG: Status {response.status_code}, {response.text}"
+        )
         return False
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Error downloading Mermaid PNG: {e}")
@@ -80,7 +102,9 @@ def validate_and_execute_diagram(code: str, output_dir: str) -> dict:
         A dictionary containing success status, error messages, and stdout.
     """
     # Create a temporary file for the script
-    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode='w', encoding='utf-8') as f:
+    with tempfile.NamedTemporaryFile(
+        suffix=".py", delete=False, mode="w", encoding="utf-8"
+    ) as f:
         f.write(code)
         temp_file_path = f.name
 
@@ -94,34 +118,18 @@ def validate_and_execute_diagram(code: str, output_dir: str) -> dict:
             text=True,
             cwd=output_dir,
             timeout=30,  # Prevent infinite loops
-            check=False
+            check=False,
         )
 
         if result.returncode != 0:
-            return {
-                "success": False,
-                "error": result.stderr,
-                "stdout": result.stdout
-            }
+            return {"success": False, "error": result.stderr, "stdout": result.stdout}
 
-        return {
-            "success": True,
-            "error": None,
-            "stdout": result.stdout
-        }
+        return {"success": True, "error": None, "stdout": result.stdout}
 
     except subprocess.TimeoutExpired:
-        return {
-            "success": False,
-            "error": "Execution timed out.",
-            "stdout": ""
-        }
+        return {"success": False, "error": "Execution timed out.", "stdout": ""}
     except Exception as e:  # pylint: disable=broad-exception-caught
-        return {
-            "success": False,
-            "error": str(e),
-            "stdout": ""
-        }
+        return {"success": False, "error": str(e), "stdout": ""}
     finally:
         # Clean up the temporary file
         if os.path.exists(temp_file_path):

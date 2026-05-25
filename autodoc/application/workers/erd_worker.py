@@ -2,18 +2,24 @@
 ERD worker module for AutoDoc.
 Analyzes database models and relationships, generating Mermaid Entity Relationship Diagrams.
 """
+
 import os
-import re
 
 from langchain_core.messages import SystemMessage
 from langchain_openai import AzureChatOpenAI
-from langgraph.prebuilt import create_react_agent
 
+from autodoc.application.workers.base_worker import (
+    create_worker_graph,
+    extract_diagram_result,
+    run_worker_graph,
+)
 from autodoc.domain.state import AgentState
-from autodoc.infrastructure.engine.validator import validate_mermaid
-from autodoc.infrastructure.tools.code_scanner import (grep_search,
-                                                       list_directory,
-                                                       read_file)
+from autodoc.infrastructure.engine.validator import clean_mermaid_dsl, validate_mermaid
+from autodoc.infrastructure.tools.code_scanner import (
+    grep_search,
+    list_directory,
+    read_file,
+)
 
 llm = AzureChatOpenAI(
     azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
@@ -23,7 +29,9 @@ llm = AzureChatOpenAI(
 ERD_WORKER_SYSTEM_PROMPT = """
 You are the ERD Worker for AutoDoc. Your job is to:
 1. Identify database models and their relationships in the project.
-2. Generate Mermaid DSL for an Entity Relationship Diagram (ERD).
+3. Use the tools provided to explore the project.
+4. IMPORTANT: When defining node labels or string literals in Mermaid that contain spaces or special characters (like parentheses, brackets, or commas), you MUST wrap the text in double quotes. DO NOT use double quotes INSIDE the label itself; if you need to include quotes or strings (like JSON), use single quotes (e.g., A["Return {'key':'value'}"]).
+5. Generate the Mermaid DSL for the ERD.
 
 Example Mermaid ERD:
 ```mermaid
@@ -43,56 +51,61 @@ Output ONLY the Mermaid DSL code block.
 """
 
 
-def extract_mermaid_code(text: str) -> str:
+def erd_worker_node(state: AgentState, config=None):
     """
-    Extracts Mermaid code from the LLM response.
-
-    Args:
-        text: The raw text response.
-
-    Returns:
-        The extracted Mermaid DSL.
-    """
-    pattern = r"```mermaid\s*(.*?)\s*```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    pattern = r"```\s*(.*?)\s*```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
-def erd_worker_node(state: AgentState):
-    """
-    ERD worker node that generates entity relationship diagrams.
+    The ERD worker node that extracts database schema and generates Mermaid DSL.
 
     Args:
         state: The current agent state.
+        config: Runnable configuration.
 
     Returns:
         Updated state with documentation.
     """
     print("--- ERD Worker Started ---")
-    messages = [SystemMessage(content=ERD_WORKER_SYSTEM_PROMPT)] + list(state["messages"])
+    on_event = config.get("configurable", {}).get("on_event") if config else None
+    messages = [
+        SystemMessage(content=ERD_WORKER_SYSTEM_PROMPT),
+    ] + list(state["messages"])
 
-    agent = create_react_agent(llm, [list_directory, read_file, grep_search])
-    response = agent.invoke({"messages": messages})
+    agent = create_worker_graph(
+        llm, [list_directory, read_file, grep_search], ERD_WORKER_SYSTEM_PROMPT
+    )
 
-    last_message = response["messages"][-1].content
-    dsl = extract_mermaid_code(last_message)
+    final_response, events = run_worker_graph(agent, messages, "ERDWorker", on_event)
+
+    code, explanation = extract_diagram_result(llm, final_response["messages"])
+    dsl = clean_mermaid_dsl(code)
 
     new_documentation = []
 
     if dsl:
         result = validate_mermaid(dsl)
         if result["success"]:
-            new_documentation.append(f"Generated ERD diagram (Mermaid):\n\n```mermaid\n{dsl}\n```")
+            new_documentation.append(
+                {
+                    "type": "data_models",
+                    "explanation": explanation,
+                    "code": dsl,
+                    "valid": True,
+                }
+            )
         else:
-            new_documentation.append(f"Failed to validate ERD Mermaid DSL: {result['error']}")
+            warning_msg = (
+                f"\n\n> [!WARNING]\n> Failed to validate ERD "
+                f"Mermaid DSL: {result['error']}"
+            )
+            new_documentation.append(
+                {
+                    "type": "data_models",
+                    "explanation": explanation + warning_msg,
+                    "code": "",
+                    "valid": False,
+                }
+            )
 
     return {
-        "messages": response["messages"],
-        "documentation": new_documentation
+        "messages": final_response["messages"],
+        "documentation": new_documentation,
+        "events": events,
     }

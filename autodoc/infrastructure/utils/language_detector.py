@@ -2,6 +2,7 @@
 Language and stack detector for the AutoDoc system.
 Analyzes project files to identify the technology stack.
 """
+
 import os
 
 

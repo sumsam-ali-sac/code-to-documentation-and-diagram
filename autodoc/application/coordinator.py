@@ -2,26 +2,32 @@
 Coordinator module for the AutoDoc system.
 Responsible for project analysis and task delegation to specialized workers.
 """
-import json
+
 import os
-import re
+from typing import List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import create_react_agent
 from langgraph.types import Send
+from pydantic import BaseModel, Field
 
 from autodoc.application.markdown_builder_node import markdown_builder_node
 from autodoc.application.workers.architecture_worker import architecture_worker_node
+from autodoc.application.workers.base_worker import (
+    create_worker_graph,
+    run_worker_graph,
+)
 from autodoc.application.workers.class_worker import class_worker_node
 from autodoc.application.workers.erd_worker import erd_worker_node
 from autodoc.application.workers.flow_worker import flow_worker_node
 from autodoc.application.workers.sequence_worker import sequence_worker_node
 from autodoc.domain.state import AgentState
-from autodoc.infrastructure.tools.code_scanner import (grep_search,
-                                                       list_directory,
-                                                       read_file)
+from autodoc.infrastructure.tools.code_scanner import (
+    grep_search,
+    list_directory,
+    read_file,
+)
 from autodoc.infrastructure.utils.language_detector import detect_stack
 
 # Initialize the Azure OpenAI LLM
@@ -39,6 +45,8 @@ You are the Coordinator Agent for AutoDoc. Your job is to:
 3. Identify "Points of Interest" (Database models, API definitions, Business logic).
 4. Decide which specialized Worker Agents to engage (architecture, erd, sequence, flow, class).
 
+CRITICAL RULE: You MUST ALWAYS include "architecture_worker" in your task list to provide a high-level system overview.
+
 You must output a JSON block indicating the specific diagramming tasks to run. Use the format:
 ```json
 [
@@ -49,45 +57,36 @@ You must output a JSON block indicating the specific diagramming tasks to run. U
   {"worker": "class_worker", "target": "key classes and interfaces"}
 ]
 ```
-Choose the workers that make sense for the project. Output ONLY the valid JSON block as your final answer.
+Choose the other workers that make sense for the project. Output ONLY the valid JSON block as your final answer.
 """
 
 
-def extract_json_tasks(text: str) -> list:
-    """
-    Extracts JSON tasks from the coordinator response.
+class CoordinatorTask(BaseModel):
+    """Structured output for a single task."""
 
-    Args:
-        text: The raw text response from the LLM.
-
-    Returns:
-        A list of task dictionaries.
-    """
-    pattern = r"```json\s*(.*?)\s*```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except (json.JSONDecodeError, ValueError):
-            pass
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return [
-            {"worker": "architecture_worker"},
-            {"worker": "erd_worker"},
-            {"worker": "sequence_worker"},
-            {"worker": "flow_worker"},
-            {"worker": "class_worker"}
-        ]
+    worker: str = Field(
+        description="The name of the worker agent (e.g., architecture_worker)"
+    )
+    target: str = Field(
+        default="", description="The target component or area to document"
+    )
 
 
-def coordinator_node(state: AgentState):
+class CoordinatorTasks(BaseModel):
+    """Structured output for the list of tasks."""
+
+    tasks: List[CoordinatorTask] = Field(
+        description="List of tasks for the worker agents"
+    )
+
+
+def coordinator_node(state: AgentState, config=None):
     """
     Coordinator node that analyzes the project and selects tasks.
 
     Args:
         state: The current agent state.
+        config: Runnable configuration.
 
     Returns:
         Updated state with selected tasks and stack.
@@ -95,19 +94,38 @@ def coordinator_node(state: AgentState):
     print("--- Coordinator Started ---")
     project_path = state["project_path"]
     stack = detect_stack(project_path)
+    # Extract project_name from config if available for callbacks
+    on_event = config.get("configurable", {}).get("on_event") if config else None
 
-    messages = [SystemMessage(content=COORDINATOR_SYSTEM_PROMPT)] + list(state["messages"])
-    agent = create_react_agent(llm, coordinator_tools)
-    response = agent.invoke({"messages": messages})
+    events = []
+    messages = [SystemMessage(content=COORDINATOR_SYSTEM_PROMPT)] + list(
+        state["messages"]
+    )
+    agent = create_worker_graph(llm, coordinator_tools, COORDINATOR_SYSTEM_PROMPT)
 
-    last_message = response["messages"][-1].content
-    tasks = extract_json_tasks(last_message)
+    final_response, events = run_worker_graph(agent, messages, "Coordinator", on_event)
+
+    # Use structured output to reliably extract the tasks from the conversation history
+    extractor = llm.with_structured_output(CoordinatorTasks)
+    try:
+        extraction_result = extractor.invoke(final_response["messages"])
+        tasks = [task.model_dump() for task in extraction_result.tasks]
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"Extraction failed: {e}")
+        tasks = [
+            {"worker": "architecture_worker"},
+            {"worker": "erd_worker"},
+            {"worker": "sequence_worker"},
+            {"worker": "flow_worker"},
+            {"worker": "class_worker"},
+        ]
     print(f"Coordinator selected tasks: {tasks}")
 
     return {
-        "messages": response["messages"],
+        "messages": final_response["messages"],
         "stack": stack,
-        "tasks": tasks
+        "tasks": tasks,
+        "events": events,
     }
 
 
@@ -124,8 +142,11 @@ def route_tasks(state: AgentState):
     tasks = state.get("tasks", [])
     sends = []
     worker_names = [
-        "architecture_worker", "erd_worker", "sequence_worker",
-        "flow_worker", "class_worker"
+        "architecture_worker",
+        "erd_worker",
+        "sequence_worker",
+        "flow_worker",
+        "class_worker",
     ]
     for task in tasks:
         worker_name = task.get("worker")
@@ -136,12 +157,13 @@ def route_tasks(state: AgentState):
     return sends
 
 
-def run_coordinator(project_path: str):
+def run_coordinator(project_path: str, on_event=None):
     """
     Initializes and runs the coordinator workflow.
 
     Args:
         project_path: Path to the project to document.
+        on_event: Optional callback for real-time event streaming.
 
     Returns:
         The final state of the workflow.
@@ -163,9 +185,13 @@ def run_coordinator(project_path: str):
         "coordinator",
         route_tasks,
         [
-            "architecture_worker", "erd_worker", "sequence_worker",
-            "flow_worker", "class_worker", "markdown_builder"
-        ]
+            "architecture_worker",
+            "erd_worker",
+            "sequence_worker",
+            "flow_worker",
+            "class_worker",
+            "markdown_builder",
+        ],
     )
 
     # Fan-in to markdown builder
@@ -187,8 +213,11 @@ def run_coordinator(project_path: str):
         "points_of_interest": [],
         "documentation": [],
         "diagram_paths": [],
+        "events": [],
         "current_worker": "",
-        "errors": []
+        "errors": [],
     }
 
-    return workflow_app.invoke(initial_state)
+    return workflow_app.invoke(
+        initial_state, config={"configurable": {"on_event": on_event}}
+    )
